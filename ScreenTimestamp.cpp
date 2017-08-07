@@ -37,6 +37,8 @@
 
 #include "ScreenTimestamp.h"
 
+#define FOR_ANDROID_KK
+
 #define SC_FONT_SIZE 40
 #define SC_H_MARGIN  30
 #define SC_V_MARGIN  20
@@ -89,8 +91,13 @@ ScreenTimestamp::ScreenTimestamp() : Thread(false) {
     mHeight = SC_SURFACE_H;
 
     mBitmap = new SkBitmap();
+#ifdef FOR_ANDROID_KK
+    mBitmap->setConfig(SkBitmap::kARGB_8888_Config, mWidth, mHeight);
+    mBitmap->allocPixels();
+#else
     SkImageInfo info = SkImageInfo::Make(mWidth, mHeight, kN32_SkColorType, kPremul_SkAlphaType);
     mBitmap->allocPixels(info);
+#endif
 
     mCanvas = new SkCanvas(*mBitmap);
 }
