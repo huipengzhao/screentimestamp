@@ -37,7 +37,15 @@
 
 #include "ScreenTimestamp.h"
 
+#ifndef PLATFORM_SDK_VERSION
+// Default version is Android-L
+#warning PLATFORM_SDK_VERSION is not defined, use 21 as default.
+#define PLATFORM_SDK_VERSION 21
+#endif
+
+#if PLATFORM_SDK_VERSION <= 19
 #define FOR_ANDROID_KK
+#endif
 
 #define SC_FONT_SIZE 40
 #define SC_H_MARGIN  30
@@ -49,7 +57,8 @@
     We want to show clock of the format XXX.Y seconds.
     So sample frequency should be 1/2 of 100 ms, that is 50 ms.
 */
-#define SC_SLEEP_INTERVAL (50*1000)
+#define SC_SLEEP_INTERVAL_MS (50)
+#define SC_SLEEP_INTERVAL_US (SC_SLEEP_INTERVAL_MS*1000)
 
 #include <time.h>
 static inline long long gettimestamp_ns() {
@@ -79,7 +88,7 @@ struct Texture {
 };
 
 // ---------------------------------------------------------------------------
-ScreenTimestamp::ScreenTimestamp() : Thread(false) {
+ScreenTimestamp::ScreenTimestamp(unsigned int duration) : Thread(false), mDuration(duration) {
     mSession = new SurfaceComposerClient();
 
     mPaint = new SkPaint();
@@ -100,6 +109,7 @@ ScreenTimestamp::ScreenTimestamp() : Thread(false) {
 #endif
 
     mCanvas = new SkCanvas(*mBitmap);
+
 }
 
 ScreenTimestamp::~ScreenTimestamp() {
@@ -204,22 +214,15 @@ void ScreenTimestamp::draw() {
     glEnable(GL_TEXTURE_2D);
     glTexEnvx(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
-    unsigned int tsLast = 0;
     do {
-        unsigned int tsNow = (unsigned int)gettimestamp_ms();
-        if (tsNow - tsLast < 100) {
-            usleep(SC_SLEEP_INTERVAL);
-            continue;
-        }
-        tsLast = tsNow;
-
+        unsigned int tsPoint = (unsigned int)gettimestamp_ms();
         char strbuf[64] = {0};
-        sprintf(strbuf, "%u.%u", tsNow/1000, (tsNow%1000)/100);
+        sprintf(strbuf, "%u.%u", tsPoint/1000, (tsPoint%1000)/100);
         drawText(strbuf, *mBitmap, *mCanvas, *mPaint);
 
         glDisable(GL_SCISSOR_TEST);
         glClear(GL_COLOR_BUFFER_BIT);
-        
+
         glEnable(GL_SCISSOR_TEST);
         glEnable(GL_BLEND);
         glBindTexture(GL_TEXTURE_2D, textureHandle);
@@ -228,11 +231,24 @@ void ScreenTimestamp::draw() {
 
         EGLBoolean res = eglSwapBuffers(mDisplay, mSurface);
 
-        usleep(SC_SLEEP_INTERVAL);
+        checkExit();
+
+        unsigned int tsDone = (unsigned int)gettimestamp_ms();
+        unsigned int tsTaken = tsDone - tsPoint;
+        if (tsTaken < SC_SLEEP_INTERVAL_MS) {
+            usleep((SC_SLEEP_INTERVAL_MS - tsTaken)*1000);
+        }
     } while (!exitPending());
 
     // delete the texture
     glDeleteTextures(1, &textureHandle);
+}
+
+void ScreenTimestamp::checkExit() {
+    unsigned int time = (unsigned int)gettimestamp_ms();
+    if (time >= mDuration*1000) {
+        requestExit();
+    }
 }
 
 bool ScreenTimestamp::threadLoop() {
