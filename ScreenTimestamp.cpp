@@ -88,7 +88,7 @@ struct Texture {
 };
 
 // ---------------------------------------------------------------------------
-ScreenTimestamp::ScreenTimestamp() : Thread(false) {
+ScreenTimestamp::ScreenTimestamp(unsigned int duration) : Thread(false), mDuration(duration) {
     mSession = new SurfaceComposerClient();
 
     mPaint = new SkPaint();
@@ -109,6 +109,7 @@ ScreenTimestamp::ScreenTimestamp() : Thread(false) {
 #endif
 
     mCanvas = new SkCanvas(*mBitmap);
+
 }
 
 ScreenTimestamp::~ScreenTimestamp() {
@@ -230,6 +231,8 @@ void ScreenTimestamp::draw() {
 
         EGLBoolean res = eglSwapBuffers(mDisplay, mSurface);
 
+        checkExit();
+
         unsigned int tsDone = (unsigned int)gettimestamp_ms();
         unsigned int tsTaken = tsDone - tsPoint;
         if (tsTaken < SC_SLEEP_INTERVAL_MS) {
@@ -239,6 +242,13 @@ void ScreenTimestamp::draw() {
 
     // delete the texture
     glDeleteTextures(1, &textureHandle);
+}
+
+void ScreenTimestamp::checkExit() {
+    unsigned int time = (unsigned int)gettimestamp_ms();
+    if (time >= mDuration*1000) {
+        requestExit();
+    }
 }
 
 bool ScreenTimestamp::threadLoop() {

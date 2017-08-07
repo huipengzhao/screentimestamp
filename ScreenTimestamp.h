@@ -22,7 +22,7 @@ class SurfaceComposerClient;
 class ScreenTimestamp : public Thread, public IBinder::DeathRecipient
 {
 public:
-    ScreenTimestamp();
+    ScreenTimestamp(unsigned int duration);
     virtual ~ScreenTimestamp();
 
 private:
@@ -32,8 +32,10 @@ private:
     virtual void        binderDied(const wp<IBinder>& who);
 
     void draw();
+    void checkExit();
 
 private:
+	unsigned int mDuration;
     sp<SurfaceComposerClient> mSession;
     SkPaint  *mPaint; // paint for text
     SkBitmap *mBitmap;
