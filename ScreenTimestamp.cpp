@@ -37,7 +37,15 @@
 
 #include "ScreenTimestamp.h"
 
-//#define FOR_ANDROID_KK
+#ifndef PLATFORM_SDK_VERSION
+// Default version is Android-L
+#warning PLATFORM_SDK_VERSION is not defined, use 21 as default.
+#define PLATFORM_SDK_VERSION 21
+#endif
+
+#if PLATFORM_SDK_VERSION <= 19
+#define FOR_ANDROID_KK
+#endif
 
 #define SC_FONT_SIZE 40
 #define SC_H_MARGIN  30
