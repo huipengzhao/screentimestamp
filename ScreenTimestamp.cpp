@@ -37,7 +37,7 @@
 
 #include "ScreenTimestamp.h"
 
-#define FOR_ANDROID_KK
+//#define FOR_ANDROID_KK
 
 #define SC_FONT_SIZE 40
 #define SC_H_MARGIN  30
@@ -206,9 +206,9 @@ void ScreenTimestamp::draw() {
     glTexEnvx(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
     do {
-        unsigned int tsNow = (unsigned int)gettimestamp_ms();
+        unsigned int tsPoint = (unsigned int)gettimestamp_ms();
         char strbuf[64] = {0};
-        sprintf(strbuf, "%u.%u", tsNow/1000, (tsNow%1000)/100);
+        sprintf(strbuf, "%u.%u", tsPoint/1000, (tsPoint%1000)/100);
         drawText(strbuf, *mBitmap, *mCanvas, *mPaint);
 
         glDisable(GL_SCISSOR_TEST);
@@ -222,7 +222,8 @@ void ScreenTimestamp::draw() {
 
         EGLBoolean res = eglSwapBuffers(mDisplay, mSurface);
 
-        unsigned int tsTaken = (unsigned int)gettimestamp_ms() - tsNow;
+        unsigned int tsDone = (unsigned int)gettimestamp_ms();
+        unsigned int tsTaken = tsDone - tsPoint;
         if (tsTaken < SC_SLEEP_INTERVAL_MS) {
             usleep((SC_SLEEP_INTERVAL_MS - tsTaken)*1000);
         }
