@@ -7,9 +7,7 @@
 #include <EGL/egl.h>
 #include <GLES/gl.h>
 
-class SkPaint;
-class SkBitmap;
-class SkCanvas;
+#include "TimestampRender.h"
 
 namespace android {
 
@@ -22,7 +20,7 @@ class SurfaceComposerClient;
 class ScreenTimestamp : public Thread, public IBinder::DeathRecipient
 {
 public:
-    ScreenTimestamp(unsigned int duration);
+    ScreenTimestamp(unsigned int msStoptime);
     virtual ~ScreenTimestamp();
 
 private:
@@ -35,11 +33,9 @@ private:
     void checkExit();
 
 private:
-	unsigned int mDuration;
+	unsigned int mStoptime; // in millisecond
     sp<SurfaceComposerClient> mSession;
-    SkPaint  *mPaint; // paint for text
-    SkBitmap *mBitmap;
-    SkCanvas *mCanvas;
+    TimestampRender *mRender;
     int mWidth;  // surface width
     int mHeight; // surface height
     EGLDisplay mDisplay;

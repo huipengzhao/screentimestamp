@@ -25,33 +25,11 @@
 #include <gui/Surface.h>
 #include <gui/SurfaceComposerClient.h>
 
-#include <SkPaint.h>
-#include <SkCanvas.h>
-#include <SkBitmap.h>
-#include <SkStream.h>
-#include <SkImageDecoder.h>
-
 #include <GLES/gl.h>
 #include <GLES/glext.h>
 #include <EGL/eglext.h>
 
 #include "ScreenTimestamp.h"
-
-#ifndef PLATFORM_SDK_VERSION
-// Default version is Android-L
-#warning PLATFORM_SDK_VERSION is not defined, use 21 as default.
-#define PLATFORM_SDK_VERSION 21
-#endif
-
-#if PLATFORM_SDK_VERSION <= 19
-#define FOR_ANDROID_KK
-#endif
-
-#define SC_FONT_SIZE 40
-#define SC_H_MARGIN  30
-#define SC_V_MARGIN  20
-#define SC_SURFACE_W 300
-#define SC_SURFACE_H (SC_V_MARGIN*2 + SC_FONT_SIZE)
 
 /*
     We want to show clock of the format XXX.Y seconds.
@@ -88,28 +66,11 @@ struct Texture {
 };
 
 // ---------------------------------------------------------------------------
-ScreenTimestamp::ScreenTimestamp(unsigned int duration) : Thread(false), mDuration(duration) {
+ScreenTimestamp::ScreenTimestamp(unsigned int msStoptime) : Thread(false), mStoptime(msStoptime) {
     mSession = new SurfaceComposerClient();
-
-    mPaint = new SkPaint();
-    mPaint->setTextSize(SkIntToScalar(SC_FONT_SIZE));
-    mPaint->setColor(SK_ColorBLACK);
-    mPaint->setAntiAlias(true);
-
-    mWidth  = SC_SURFACE_W;
-    mHeight = SC_SURFACE_H;
-
-    mBitmap = new SkBitmap();
-#ifdef FOR_ANDROID_KK
-    mBitmap->setConfig(SkBitmap::kARGB_8888_Config, mWidth, mHeight);
-    mBitmap->allocPixels();
-#else
-    SkImageInfo info = SkImageInfo::Make(mWidth, mHeight, kN32_SkColorType, kPremul_SkAlphaType);
-    mBitmap->allocPixels(info);
-#endif
-
-    mCanvas = new SkCanvas(*mBitmap);
-
+    mRender = new TimestampRender();
+    mWidth = 400;
+    mHeight = 80;
 }
 
 ScreenTimestamp::~ScreenTimestamp() {
@@ -179,74 +140,51 @@ status_t ScreenTimestamp::readyToRun() {
     mFlingerSurfaceControl = control;
     mFlingerSurface = s;
 
+    ALOGD("%s %d: mWidth=%u, mHeight=%u\n", __FUNCTION__, __LINE__, mWidth, mHeight);
     return NO_ERROR;
 }
 
-static void drawText(const char *str, SkBitmap& bitmap, SkCanvas& canvas, SkPaint& paint) {
-    SkString text(str);
-    bitmap.lockPixels();
-
-    // draw background
-    canvas.drawColor(SK_ColorWHITE);
-
-    // draw text
-    canvas.drawText(text.c_str(), text.size(), SC_H_MARGIN, (SC_V_MARGIN+SC_FONT_SIZE), paint);
-
-    bitmap.notifyPixelsChanged();
-    bitmap.unlockPixels();
-}
-
 void ScreenTimestamp::draw() {
-    // generate a texture
-    const int w = mBitmap->width();
-    const int h = mBitmap->height();
-    GLint crop[4] = { 0, h, w, -h };
+    // clear screen
+    glShadeModel(GL_FLAT);
+    glDisable(GL_DITHER);
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0,0,0,1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    eglSwapBuffers(mDisplay, mSurface);
 
-    GLuint textureHandle = 0;
-    glGenTextures(1, &textureHandle);
-    glBindTexture(GL_TEXTURE_2D, textureHandle);
-    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_CROP_RECT_OES, crop);
-    glTexParameterx(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameterx(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameterx(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameterx(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    // Blend state
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glTexEnvx(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
     glEnable(GL_TEXTURE_2D);
     glTexEnvx(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
+    mRender->init(mWidth, mHeight);
+
     do {
-        unsigned int tsPoint = (unsigned int)gettimestamp_ms();
-        char strbuf[64] = {0};
-        sprintf(strbuf, "%u.%u", tsPoint/1000, (tsPoint%1000)/100);
-        drawText(strbuf, *mBitmap, *mCanvas, *mPaint);
+        nsecs_t now = systemTime();
 
-        glDisable(GL_SCISSOR_TEST);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        glEnable(GL_SCISSOR_TEST);
-        glEnable(GL_BLEND);
-        glBindTexture(GL_TEXTURE_2D, textureHandle);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, mBitmap->getPixels());
-        glDrawTexiOES(0, 0, 0, w, h);
+        unsigned int ms = (unsigned int)ns2ms(now);
+        mRender->drawText("%u.%u", ms/1000, (ms%1000)/100);
+        glDisable(GL_SCISSOR_TEST); // let ts-render draw outside the scissor.
+        mRender->renderToGL(0, 0); // coordinate to the surface.
 
         EGLBoolean res = eglSwapBuffers(mDisplay, mSurface);
 
+        // 10fps: don't animate too fast to preserve CPU
+        const nsecs_t sleepTime = 100000 - ns2us(systemTime() - now);
+        if (sleepTime > 0)
+            usleep(sleepTime);
+
         checkExit();
 
-        unsigned int tsDone = (unsigned int)gettimestamp_ms();
-        unsigned int tsTaken = tsDone - tsPoint;
-        if (tsTaken < SC_SLEEP_INTERVAL_MS) {
-            usleep((SC_SLEEP_INTERVAL_MS - tsTaken)*1000);
-        }
     } while (!exitPending());
-
-    // delete the texture
-    glDeleteTextures(1, &textureHandle);
 }
 
 void ScreenTimestamp::checkExit() {
-    unsigned int time = (unsigned int)gettimestamp_ms();
-    if (time >= mDuration*1000) {
+    unsigned int msNow = (unsigned int)gettimestamp_ms();
+    if (mStoptime && msNow >= mStoptime) {
         requestExit();
     }
 }

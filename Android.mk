@@ -2,8 +2,9 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-    screentimestamp_main.cpp \
-    ScreenTimestamp.cpp
+    TimestampRender.cpp \
+    ScreenTimestamp.cpp \
+    screentimestamp_main.cpp
 
 LOCAL_CFLAGS += -DGL_GLEXT_PROTOTYPES -DEGL_EGLEXT_PROTOTYPES
 LOCAL_CFLAGS += -Wno-unused-parameter

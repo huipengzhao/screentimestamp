@@ -17,19 +17,21 @@
 
 using namespace android;
 
-#define OPT_LIST "d:h:"
+#define OPT_LIST "d:hs:"
 
 struct opt_args {
-	unsigned int duration; //second
+    long stoptime; //second
+	long duration; //second
 	//todo: other args
 };
 
 void show_usage(void)
 {
 	printf("Usage: screentimestamp [options]\n");
-	printf("        -h         show this help.\n");
-	printf("        -d <duration>  programe run time.\n");
-
+	printf("    -h             show this help.\n");
+	printf("    -s <stoptime>  stop at time, 0 means endless.\n");
+	printf("    -d <duration>  duration in second, 0 means endless.\n");
+	printf("                   -d overrides -s.\n");
 	printf("\n");
 }
 
@@ -39,6 +41,7 @@ int parse_args(int argc, char *argv[], struct opt_args* args)
 	int err = 0;
 
 	memset(args, 0, sizeof(*args));
+	args->stoptime = args->duration = -1;
 
 	opterr=0;
 	while ((ch=getopt(argc, argv, OPT_LIST)) != -1) {
@@ -49,8 +52,12 @@ int parse_args(int argc, char *argv[], struct opt_args* args)
 			break;
 		case 'd':
 			args->duration = strtol(optarg, &endch, 0);
-			err = (*endch != '\0' || args->duration <= 0);
+			err = (*endch != '\0' || args->duration < 0);
 			break;
+		case 's':
+			args->stoptime = strtol(optarg, &endch, 0);
+			err = (*endch != '\0' || args->stoptime < 0);
+		    break;
 		default:
 			ch = optopt;
 			err = 1;
@@ -60,14 +67,6 @@ int parse_args(int argc, char *argv[], struct opt_args* args)
 			printf("Invalid option: -%c %s", ch, optarg);
 			return -1;
 		}
-	}
-	return 0;
-}
-
-int verify_args(struct opt_args * args)
-{
-	if (!args->duration) {
-		args->duration = 30;
 	}
 	return 0;
 }
@@ -82,10 +81,19 @@ int main(int argc, char** argv)
 	if(parse_args(argc, argv, &args) < 0) {
 		return -1;
 	}
-	verify_args(&args);
     sp<ProcessState> proc(ProcessState::self());
     ProcessState::self()->startThreadPool();
-    sp<ScreenTimestamp> clock = new ScreenTimestamp(args.duration);
+
+    unsigned int msNow = (unsigned int)ns2ms(systemTime());
+    unsigned msStoptime = 0; // 0 means endless.
+    if (args.duration != -1) { // use duration
+        msStoptime = msNow + args.duration*1000;
+    } else
+    if (args.stoptime != -1) { // use stoptime
+        msStoptime = args.stoptime*1000;
+    }
+    sp<ScreenTimestamp> clock = new ScreenTimestamp(msStoptime);
+
     IPCThreadState::self()->joinThreadPool();
 
     return 0;
